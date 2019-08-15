@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>通讯录管理</title>
+    <script src="static/js/vue.js"></script>
+    <script src="static/js/util.js"></script>
+    <script src="static/element-ui/index.js"></script>
+    <link href="static/element-ui/index.css" rel="stylesheet" />
+    <link href="static/css/index.css" rel="stylesheet" />
+</head>
+<body>
+    <div id="app">
+        <el-tabs type="border-card">
+            <div class="el-row">
+                <el-button class="el-icon-plus" @click="createUserVisible = true">添加通讯录</el-button>
+                <el-button class="el-icon-d-arrow-right" @click="importUserVisible = true">导入通讯录</el-button>
+                <el-button class="el-icon-delete" @click="batchDeletePerson">批量删除</el-button>
+            </div>
+            <el-tab-pane label="通讯录管理">
+                <el-table 
+                    ref="peopleTable"
+                    border 
+                    :data="people.filter(data => !search || data.name.toLowerCase().includes(search.toLowerCase()))" 
+                    class="addrss-book" 
+                    @selection-change="handleSelectionChange"
+                    :row-class-name="handleRowClassName"
+                    @row-dblclick="handleRowDblClick"
+                >
+                    <el-table-column type="selection"></el-table-column>
+                    <el-table-column prop="name" label="姓名"></el-table-column>
+                    <el-table-column prop="phone" label="手机"></el-table-column>
+                    <el-table-column prop="email" label="邮箱"></el-table-column>
+                    <el-table-column>
+                        <template slot="header" slot-scope="scope">
+                            <el-input v-model="search" size="mini" placeholder="输入关键字搜索" />
+                        </template>
+                        <template slot-scope="scope">
+                            <el-button size="mini" @click="deletePerson(scope.$index,scope.row)">删除</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </el-tab-pane>
+        </el-tabs>
+        <!--添加用户对话框-->
+        <el-dialog title="添加通讯录" :visible.sync="createUserVisible">
+            <el-form ref="newPersonForm" :model="newPerson" :rules="rules" label-width="100px">
+                <el-form-item label="姓名" prop="name">
+                    <el-input v-model="newPerson.name"></el-input>
+                </el-form-item>
+                <el-form-item label="手机" prop="phone">
+                    <el-input v-model="newPerson.phone"></el-input>
+                </el-form-item>
+                <el-form-item label="邮箱" prop="email">
+                    <el-input v-model.email="newPerson.email"></el-input>
+                </el-form-item>
+                <el-form-item>
+                    <el-button @click="createPerson('newPersonForm')">创建</el-button>
+                </el-form-item>
+            </el-form>
+        </el-dialog>
+        <!--导入用户对话框-->
+        <el-dialog ref="uploadDialog" width="400px" title="导入通讯录" :visible.sync="importUserVisible">
+            <div class="el-row">
+                <input type="file" name="upload" />
+            </div>
+            <el-button style="margin-left: 10px;" size="small" type="success" @click="importPerson">导入</el-button>
+            <div slot="tip" class="el-upload__tip">只能上传csv文件</div>
+            </el-upload>
+        </el-dialog>
+    </div>
+    <script src="static/js/papaparse.js"></script>
+    <script>
+        //存取localStorage中的数据
+        var store = {
+            save(key,value){
+                window.localStorage.setItem(key,JSON.stringify(value));
+            },
+            fetch(key){
+                return JSON.parse(window.localStorage.getItem(key))||[];
+            }
+        }    
+        var storeKey = "addressBook";
+        var people = store.fetch(storeKey);
+        var personNames = [];
+        for(person of people){
+            personNames.push(person.name);
+        }
+        var newPerson = {name: '', phone: '', email: ''};
+        const phone_valid = (rule, value, callback) => {
+            let patter = new RegExp("^1[0-9]{10}$");
+            if(!patter.test(value)){
+                return callback(new Error('请输入正确格式的手机号'));
+            }
+            callback();
+        }
+        var vm = new Vue({
+            el: '#app',
+            data: {
+                createUserVisible: false,
+                importUserVisible: false,
+                search:'',
+                newPerson,
+                personNames,
+                rules: {
+                    name: [
+                        {required: true, message: '请输入姓名', trigger: 'blur'},
+                        {min: 2, max:5, message: '长度在 3 到 5 个字符', trigger: 'blur'}
+                    ],
+                    phone: [
+                        {required: true, message: '请输入手机号', trigger: 'blur'},
+                        {validator: phone_valid, trigger: 'blur'}
+                    ],
+                    email: [
+                        {required: true, message: '请输入邮件地址', trigger: 'blur'},
+                        {type: 'email', message: '请输入正确的邮件地址', trigger: 'blur'}
+                    ]
+                },
+                people,
+                uploadFile: null,
+                fileList: [], //TODO: delete
+                userSelection: []
+            },
+            watch:{
+                people:{
+                    handler:function(){
+                        store.save(storeKey,this.people);
+                    },
+                    deep:true
+                }
+            },
+            methods:{
+                createPerson: function(formName){
+                    this.$refs[formName].validate((valid) => {
+                        if(valid){
+                            if(this.personNames.indexof(this.newPerson.name) < 0 ){
+                                this.createUserVisible = false;
+                                this.people.push(this.newPerson);
+                                this.personNames.push(this.newPerson.name);
+                                this.$message({
+                                    showClose: true,
+                                    message: `通讯录 “${this.newPerson.name}” 添加成功`,
+                                    type: 'success'
+                                });
+                                this.newPerson = {name: '', phone: '', email: ''};
+                            }else{
+                                this.$message({
+                                    showClose: true,
+                                    message: '姓名已存在',
+                                    type: 'error'
+                                });
+                                return false;
+                            }
+                        }else{
+                            return false;
+                        }
+                    });
+                },
+                deletePerson: function(index,row){
+                    this.$confirm(`此操作将删除通讯录 “${row.name}”，是否继续?`, '提示', {
+                        confirmButtonText: '确定',
+                        cancelButtonText: '取消',
+                        type: 'warning'
+                    }).then(() => {
+                        this.people.splice(index,1);
+                        this.$message({
+                            type: 'success',
+                            message: '删除成功!'
+                        });
+                    }).catch(() => {
+                        this.$message({
+                            type: 'info',
+                            message: '已取消删除'
+                        });
+                    });
+                },
+                importPerson: function(){
+                    if(document.getElementsByName('upload')[0].files.length > 0){
+                        let personNames = this.personNames;
+                        let people = this.people;
+                        Papa.parse(document.getElementsByName('upload')[0].files[0], {
+                            complete: function(results) {
+                                let nameindex = 0;
+                                let phoneindex = 2;
+                                let emailindex = 1;
+                                let addresses = results.data;
+                                let header = addresses.slice(0,1);
+                                addresses.splice(0,1);
+                                let i = 0;
+                                console.log(header)
+                                for(let item of header){
+                                    if(item.indexOf('name') >= 0 || item.indexOf('姓名') >= 0){
+                                        nameindex = i;
+                                    }else if(item.indexOf('phone') >= 0 || item.indexOf('电话') >= 0 || item.indexOf('手机') >= 0){
+                                        phoneindex = i;
+                                    }else if(item.indexOf('email') >= 0 || item.indexOf('mail') >= 0 || item.indexOf('电子邮件地址') >= 0){
+                                        emailindex = i;
+                                    }
+                                    i += 1;
+                                }
+                                for(let person of addresses){
+                                    if(person[nameindex].Trim() && personNames.indexOf(person[nameindex]) < 0 ){
+                                        let newPerson = {
+                                            name: person[nameindex],
+                                            phone: person[phoneindex],
+                                            email: person[emailindex]
+                                        }
+                                        people.push(newPerson);
+                                        personNames.push(person[nameindex]);
+                                    }
+                                }
+                            }
+                        });
+                        this.personNames = personNames;
+                        this.people = people;
+                        this.importUserVisible = false;
+                    }else{
+                        this.$message({
+                            type: 'info',
+                            message: '请选择一个文件'
+                        });
+                    }
+                },
+                handleRowClassName(row){
+                    row.row.index = row.rowIndex;
+                },
+                handleSelectionChange(val) {
+                    this.userSelection = val;
+                },
+                handleRowDblClick(row, event, column){
+                    //点击选中
+                    this.$refs.peopleTable.toggleRowSelection(row,true);
+                },
+                batchDeletePerson: function(){
+                    if(this.userSelection.length){
+                        this.$confirm(`此操作将删除选中的通讯录，是否继续?`, '提示', {
+                            confirmButtonText: '确定',
+                            cancelButtonText: '取消',
+                            type: 'warning'
+                        }).then(() => {
+                            let selectionIndexs = [];
+                            this.userSelection.forEach((item) => {
+                                selectionIndexs.push(parseInt(item.index))
+                            });
+                            //纯数字数组排序
+                            selectionIndexs.sort(function (a,b) {
+                                return a-b;
+                            });
+                            //从大到小删，否则异常
+                            selectionIndexs.reverse();
+                            for(let selectionIndex of selectionIndexs){
+                                this.people.splice(selectionIndex,1);
+                            }
+                            this.$message({
+                                type: 'success',
+                                message: '删除成功!'
+                            });
+                        }).catch(() => {
+                            this.$message({
+                                type: 'info',
+                                message: '已取消删除'
+                            });          
+                        });
+                    }
+                }
+            }
+        })
+    </script>
+</body>
+</html>
+
